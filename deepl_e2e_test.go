@@ -3,6 +3,9 @@
 
 // End-to-End (E2E) tests for the DeepL Go client library (See Issue #4).
 //
+// Note: In some IDEs, "No packages found for open file" warnings may appear.
+//       This is expected due to the build tag "e2e".
+//
 // These tests use the DeepL Mock server (https://github.com/DeepLcom/deepl-mock)
 // to simulate real DeepL API interactions without requiring actual API credentials.
 //

@@ -1,0 +1,98 @@
+# This workflow runs weekly to check for changes in the DeepL API OpenAPI specification
+# and update the API coverage report accordingly.
+#
+# IMPORTANT: **It creates a PR with changes every time it runs**. This is done to prevent
+# the workflow from being disabled due to GitHub Actions' limitation that workflows are
+# automatically disabled if no actions are performed for 60 days.
+#
+# NOTE: To keep the commit history clean as much as possible, this workflow tries to append
+# new changes to the same PR branch if it exists. So you don't need to merge every week.
+# `squash-merge` the stored commit time-to-time to keep the commit as one. Then delete the branch.
+name: Weekly API Coverage Check
+
+permissions:
+  contents: write  # Allow pushing changes
+  pull-requests: write  # Allow creating pull requests
+
+on:
+  schedule:
+    # Run weekly on Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  update-coverage:
+    name: Update API Coverage Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
+        with:
+          # Allow pushing to the repository
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 'stable'
+          check-latest: true
+
+      - name: Generate API coverage report
+        run: |
+          go generate ./tools/...
+
+      - name: Check if spec has changed
+        id: check-spec-changes
+        run: |
+          if git diff --quiet tools/testdata/openapi_spec.yaml; then
+            echo "No changes to OpenAPI spec"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            git add tools/testdata/openapi_spec.yaml
+
+            echo "OpenAPI spec has changed"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update report and generation time stamp
+        id: check-report-changes
+        run: |
+          if git diff --quiet api_coverage_report.md; then
+            echo "No changes to API coverage report"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            git add api_coverage_report.md
+
+            echo "API coverage report has changed"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Pull Request with changes
+        if: steps.check-report-changes.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automated-api-coverage-update
+          title: 'Automated API Coverage Update'
+          body: |
+            This PR contains automated updates to the API coverage report based on the latest DeepL API OpenAPI specification.
+
+            Changes:
+            - api_coverage_report.md
+              - Updated timestamp of the last check (always)
+              - Updated API coverage report (if the spec has changed)
+            - tools/testdata/openapi_spec.yaml
+              - Updated OpenAPI spec (if there were changes)
+
+            This PR is created weekly to prevent the workflow from being disabled due to inactivity.
+          commit-message: 'chore: check for OpenAPI spec changes and update coverage report [automated]'
+          author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
+          add-paths: |
+            api_coverage_report.md
+            tools/testdata/openapi_spec.yaml
+          # Keep the branch for future commits to accumulate in the PR. With this, the workflow
+          # appends new changes to the same PR branch to ease squash-merging. The branch may be
+          # deleted after merging though.
+          delete-branch: false
